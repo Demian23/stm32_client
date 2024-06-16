@@ -1,0 +1,13 @@
+If:
+  PathMatch: .*\.cpp
+
+CompileFlags:
+  Add: [-std=c++20]
+
+---
+
+If:
+  PathMatch: .*\.h
+
+CompileFlags:
+  Add: [-std=c++20]
