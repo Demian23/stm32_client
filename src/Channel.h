@@ -24,7 +24,7 @@ private:
     SerialPort port;
     uint32_t startWord;
     uint16_t maxPacketSize;
-    uint8_t id;
+    uint16_t id;
 };
 
 } // namespace smp

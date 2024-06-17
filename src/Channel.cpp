@@ -25,13 +25,14 @@ void Channel::handshake()
 
 void Channel::handshakeAnswer()
 {
-    std::array<uint8_t, 23> buffer{}; // format handshake_start_word * 4,
+    constexpr auto buffSize = handshakeBufferSizeInBytes + sizeof(startWord) + sizeof(maxPacketSize) + sizeof(id);
+    std::array<uint8_t, buffSize> buffer{}; // format handshake_start_word * 4,
                                       // start_word, packet_size, id
     auto res = port.read(buffer.begin(), buffer.size());
     if (res == -1) {
         throw ErrnoException("Can't read handshake answer");
     }
-    if (res != 23) {
+    if (res != buffSize) {
         throw std::logic_error(
             "Can't read serial port whole message, partly not implemented");
     }
@@ -43,7 +44,7 @@ void Channel::handshakeAnswer()
             (buffer.begin() + handshakeBufferSizeInBytes));
         maxPacketSize = *reinterpret_cast<uint16_t *>(
             (buffer.begin() + handshakeBufferSizeInBytes + sizeof(startWord)));
-        id = *reinterpret_cast<uint8_t *>(
+        id = *reinterpret_cast<uint16_t *>(
             (buffer.begin() + handshakeBufferSizeInBytes + sizeof(startWord) +
              sizeof(maxPacketSize)));
     } else {
@@ -97,15 +98,16 @@ void Channel::peripheral(const uint8_t *buffer, size_t size)
 
 bool Channel::goodbye() noexcept
 {
-    std::array<uint32_t, 4> goodbyeBuffer{handshakeBuffer};
-    std::transform(goodbyeBuffer.begin(), goodbyeBuffer.end(),
-                   goodbyeBuffer.begin(),
-                   [start = this->startWord, clientId = this->id](
-                       uint32_t word) { return word ^ start ^ clientId; });
+    union{
+        header header;
+        std::array<uint8_t, sizeof(header)> buffer{};
+    }packet;
+    packet.header = {.startWord = startWord, .packetLength = sizeof(header), .connectionId = id, .flags = action::goodbye};
+    auto hash = djb2(packet.buffer.cbegin(), 10); // header before hash
+    packet.header.hash = hash;
 
-    constexpr auto bufferSize = goodbyeBuffer.size() * sizeof(uint32_t);
-    auto res = port.write(handshakeBuffer.begin(), bufferSize);
-    return res == bufferSize;
+    auto res = port.write(packet.buffer.cbegin(), packet.buffer.size());
+    return res == packet.buffer.size();
 }
 
 Channel::~Channel()
