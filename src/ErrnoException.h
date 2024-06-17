@@ -13,10 +13,22 @@ public:
         : std::logic_error(msg), _errno(errno_code)
     {}
     explicit ErrnoException(const std::string &msg) noexcept
-        : std::logic_error(msg), _errno(errno)
+        : std::logic_error(msg), _errno(
+#ifdef _WIN32
+            GetLastError()
+#else
+            errno
+#endif
+        )
     {}
     explicit ErrnoException(const char *msg) noexcept
-        : std::logic_error(msg), _errno(errno)
+        : std::logic_error(msg), _errno(
+#ifdef _WIN32
+            GetLastError()
+#else
+            errno
+#endif
+        )
     {}
     [[nodiscard]] inline int errno_code() const noexcept { return _errno; }
     ~ErrnoException() noexcept override = default;

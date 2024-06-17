@@ -16,3 +16,4 @@ CMakeCache.txt
 release/
 debug/
 debug-coverage/
+.vs/

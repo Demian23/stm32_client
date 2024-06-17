@@ -1,6 +1,7 @@
 #include "CommandProcesser.h"
 #include "ErrnoException.h"
 #include <iostream>
+#include <chrono>
 
 void exceptionHandler();
 
@@ -9,7 +10,8 @@ int main(int argc, char **argv)
     using namespace std::chrono_literals;
 
     if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << "<port_name> <baud_rate>\n";
+        std::cerr << "Usage: " << argv[0] << " <port_name> <baud_rate>\n";
+        return 0;
     }
     std::cin.exceptions(std::ios::badbit | std::ios::failbit);
     std::cerr.exceptions(std::ios::badbit | std::ios::failbit);

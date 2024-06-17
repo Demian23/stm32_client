@@ -1,5 +1,68 @@
 #include "SerialPort.h"
 #include "ErrnoException.h"
+
+#ifdef _WIN32
+
+SerialPort::SerialPort(std::string_view port, uint32_t baudRate) 
+    : portDescriptor(INVALID_HANDLE_VALUE)
+{
+    portDescriptor = CreateFile(port.data(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (portDescriptor == INVALID_HANDLE_VALUE) {
+        throw ErrnoException("Can't open port, WinAPI error", GetLastError());
+    }
+    DCB portParams{};
+    if (!GetCommState(portDescriptor, &portParams)) {
+        throw ErrnoException("Can't get port params, WinAPI error", GetLastError());
+    }
+    portParams.BaudRate = baudRate; // TODO check
+    portParams.ByteSize = 8;
+    portParams.StopBits = ONESTOPBIT;
+    portParams.Parity = NOPARITY;
+    portParams.fDtrControl = DTR_CONTROL_ENABLE; // TODO should enable?
+    portParams.fBinary = TRUE;
+    portParams.fRtsControl = RTS_CONTROL_ENABLE;
+    portParams.fOutxCtsFlow = FALSE;
+    portParams.fOutxDsrFlow = FALSE;
+    portParams.fOutX = FALSE;
+    portParams.fInX = FALSE;
+
+    if (!SetCommState(portDescriptor, &portParams)) {
+        throw ErrnoException("Can't set port params, WinAPI error", GetLastError());
+    }
+    COMMTIMEOUTS timeouts{};
+    timeouts.ReadIntervalTimeout = MAXDWORD; // blocking 
+    if (!SetCommTimeouts(portDescriptor, &timeouts)) {
+        throw ErrnoException("Can't set port timeouts, WinAPI error", GetLastError());
+    }
+    PurgeComm(portDescriptor, PURGE_RXCLEAR | PURGE_TXCLEAR);
+}
+
+SerialPort::~SerialPort()
+{
+    if (portDescriptor != INVALID_HANDLE_VALUE)
+        CloseHandle(portDescriptor);
+}
+
+int32_t SerialPort::write(const void *buffer, int32_t size)
+{
+    DWORD result{};
+    if(!WriteFile(portDescriptor, buffer, size, &result, nullptr))
+        throw ErrnoException("Port write error, WinAPI error", GetLastError());
+    return static_cast<int32_t>(result);
+}
+
+int32_t SerialPort::read(void *buffer, int32_t size)
+{
+    DWORD result{};
+    if(!ReadFile(portDescriptor, buffer, size, &result, nullptr))
+        throw ErrnoException("Port read error, WinAPI error", GetLastError());
+    return static_cast<int32_t>(result);
+}
+
+
+
+#else
+
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <termios.h>
@@ -86,7 +149,7 @@ void turnOffSpecialCharacters(termios &termiosStruct)
 
 } // namespace
 
-SerialPort::SerialPort(std::string_view port, size_t baudRate)
+SerialPort::SerialPort(std::string_view port, uint32_t baudRate)
     : portDescriptor(-1)
 {
     // rd/wr, no control tty for process, blocking
@@ -130,12 +193,12 @@ SerialPort::SerialPort(std::string_view port, size_t baudRate)
     }
 }
 
-ssize_t SerialPort::write(const void *buffer, size_t size)
+int32_t SerialPort::write(const void *buffer, int32_t size)
 {
     return ::write(portDescriptor, buffer, size);
 }
 
-ssize_t SerialPort::read(void *buffer, size_t size)
+int32_t SerialPort::read(void *buffer, int32_t size)
 {
     return ::read(portDescriptor, buffer, size);
 }
@@ -153,3 +216,5 @@ SerialPort::SerialPort(SerialPort &&rhs) noexcept
 {
     rhs.portDescriptor = -1;
 }
+
+#endif

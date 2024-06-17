@@ -36,7 +36,7 @@ std::string CommandProcesser::process(std::string_view command)
             return comChannel.values();
         case commands::LED:{
             auto commandBuffer = generateLedCommand(command.substr(commandIndex + 1, command.size() - commandIndex -1));
-            comChannel.peripheral(commandBuffer.cbegin(), commandBuffer.size());
+            comChannel.peripheral(commandBuffer.data(), commandBuffer.size());
             // get answer from peripheral
             return "Led answer";
         }
@@ -68,7 +68,7 @@ namespace {
 
         auto firstSpace = command.find_first_of(' ');
         packet.comp.device = smp::peripheral_devices::LED;
-        auto [ptr, err] = std::from_chars(command.cbegin(), command.cbegin() + firstSpace, packet.comp.controlFlags);
+        auto [ptr, err] = std::from_chars(command.data(), command.data() + firstSpace, packet.comp.controlFlags);
         if(err != std::errc()){
             throw std::logic_error("Can't convert to number: " +
                 std::string(command.cbegin(), command.cbegin() + firstSpace));

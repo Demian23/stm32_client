@@ -13,7 +13,7 @@ constexpr auto handshakeBufferSizeInBytes =
 
 void Channel::handshake()
 {
-    auto res = port.write(handshakeBuffer.begin(), handshakeBufferSizeInBytes);
+    auto res = port.write(handshakeBuffer.data(), handshakeBufferSizeInBytes);
     if (res == -1) {
         throw ErrnoException("Can't write handshake");
     }
@@ -28,7 +28,7 @@ void Channel::handshakeAnswer()
     constexpr auto buffSize = handshakeBufferSizeInBytes + sizeof(startWord) + sizeof(maxPacketSize) + sizeof(id);
     std::array<uint8_t, buffSize> buffer{}; // format handshake_start_word * 4,
                                       // start_word, packet_size, id
-    auto res = port.read(buffer.begin(), buffer.size());
+    auto res = port.read(static_cast<void*>(buffer.data()), buffer.size());
     if (res == -1) {
         throw ErrnoException("Can't read handshake answer");
     }
@@ -40,19 +40,20 @@ void Channel::handshakeAnswer()
     if (std::equal(buffer.begin(), buffer.begin() + handshakeBufferSizeInBytes,
                    handshakeBuffer.begin())) {
         // TODO byte ordering can fail here?
+        // little endian assumed
         startWord = *reinterpret_cast<uint32_t *>(
-            (buffer.begin() + handshakeBufferSizeInBytes));
+            (buffer.data() + handshakeBufferSizeInBytes)); // no cast from begin to pointer here in msvc
         maxPacketSize = *reinterpret_cast<uint16_t *>(
-            (buffer.begin() + handshakeBufferSizeInBytes + sizeof(startWord)));
+            (buffer.data() + handshakeBufferSizeInBytes + sizeof(startWord)));
         id = *reinterpret_cast<uint16_t *>(
-            (buffer.begin() + handshakeBufferSizeInBytes + sizeof(startWord) +
+            (buffer.data() + handshakeBufferSizeInBytes + sizeof(startWord) +
              sizeof(maxPacketSize)));
     } else {
         throw std::logic_error("Handshake answer first 16 bytes not equal");
     }
 }
 
-Channel::Channel(std::string_view portName, size_t baudRate)
+Channel::Channel(std::string_view portName, uint32_t baudRate)
     : port{portName, baudRate}, startWord{}, maxPacketSize{}, id{}
 {}
 
@@ -80,13 +81,13 @@ void Channel::peripheral(const uint8_t *buffer, size_t size)
                                          .flags = action::peripheral
     };
 
-    auto hash = djb2(packet.buffer.cbegin(), 10); // header before hash
+    auto hash = djb2(packet.buffer.data(), 10); // header before hash
     hash = djb2(buffer, size, hash);
     packet.headerAndData.packetHeader.hash = hash;
 
     std::copy(buffer, buffer + size, packet.headerAndData.data.begin());
 
-    auto res = port.write(packet.buffer.begin(), packetLength);
+    auto res = port.write(packet.buffer.data(), packetLength);
     if (res == -1) {
         throw ErrnoException("Can't write serial port");
     }
@@ -103,10 +104,10 @@ bool Channel::goodbye() noexcept
         std::array<uint8_t, sizeof(header)> buffer{};
     }packet;
     packet.header = {.startWord = startWord, .packetLength = sizeof(header), .connectionId = id, .flags = action::goodbye};
-    auto hash = djb2(packet.buffer.cbegin(), 10); // header before hash
+    auto hash = djb2(packet.buffer.data(), 10); // header before hash
     packet.header.hash = hash;
 
-    auto res = port.write(packet.buffer.cbegin(), packet.buffer.size());
+    auto res = port.write(packet.buffer.data(), packet.buffer.size());
     return res == packet.buffer.size();
 }
 

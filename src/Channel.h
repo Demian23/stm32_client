@@ -9,7 +9,7 @@ namespace smp {
 
 class Channel final {
 public:
-    Channel(std::string_view portName, size_t baudRate);
+    Channel(std::string_view portName, uint32_t baudRate);
     // handshake -> start word 4 times
     void handshake(); // start handshake word is 0xAE711707
     void handshakeAnswer();
