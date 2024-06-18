@@ -43,20 +43,20 @@ SerialPort::~SerialPort()
         CloseHandle(portDescriptor);
 }
 
-int32_t SerialPort::write(const void *buffer, int32_t size)
+uint32_t SerialPort::write(const void *buffer, uint32_t size)
 {
     DWORD result{};
     if(!WriteFile(portDescriptor, buffer, size, &result, nullptr))
         throw ErrnoException("Port write error, WinAPI error", GetLastError());
-    return static_cast<int32_t>(result);
+    return static_cast<uint32_t>(result);
 }
 
-int32_t SerialPort::read(void *buffer, int32_t size)
+uint32_t SerialPort::read(void *buffer, uint32_t size)
 {
     DWORD result{};
     if(!ReadFile(portDescriptor, buffer, size, &result, nullptr))
         throw ErrnoException("Port read error, WinAPI error", GetLastError());
-    return static_cast<int32_t>(result);
+    return static_cast<uint32_t>(result);
 }
 
 
@@ -193,14 +193,22 @@ SerialPort::SerialPort(std::string_view port, uint32_t baudRate)
     }
 }
 
-int32_t SerialPort::write(const void *buffer, int32_t size)
+uint32_t SerialPort::write(const void *buffer, uint32_t size)
 {
-    return ::write(portDescriptor, buffer, size);
+    auto result = ::write(portDescriptor, buffer, size);
+    if(result != -1)
+        return static_cast<uint32_t>(result);
+    else
+        throw ErrnoException("Can't write port");
 }
 
-int32_t SerialPort::read(void *buffer, int32_t size)
+uint32_t SerialPort::read(void *buffer, uint32_t size)
 {
-    return ::read(portDescriptor, buffer, size);
+    auto result = ::read(portDescriptor, buffer, size);
+    if(result != -1)
+        return static_cast<uint32_t>(result);
+    else
+        throw ErrnoException("Can't write port");
 }
 
 SerialPort::~SerialPort()

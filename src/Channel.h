@@ -1,5 +1,6 @@
 #pragma once
 #include "SerialPort.h"
+#include "Protocol.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -13,12 +14,13 @@ public:
     // handshake -> start word 4 times
     void handshake(); // start handshake word is 0xAE711707
     void handshakeAnswer();
-    bool goodbye() noexcept; // start_handshake_word ^ start_word ^ id
-    void peripheral(const uint8_t *buffer, size_t size);
-    void load(const void *buffer, size_t size);
+    bool goodbye() noexcept;
+    void peripheral(const uint8_t *buffer, uint16_t size);
+    uint16_t getAnswer(uint8_t* buffer, uint16_t size, smp::action on);
+    void load(const void *buffer, uint32_t size);
     ~Channel();
 
-    std::string values()const;
+    [[nodiscard]] std::string values()const;
 
 private:
     SerialPort port;

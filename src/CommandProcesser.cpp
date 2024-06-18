@@ -23,6 +23,8 @@ std::string CommandProcesser::process(std::string_view command)
         {"stop"sv, commands::STOP},
         {"load"sv, commands::LOAD}};
 
+    std::array<uint8_t, 0x40> answerBuffer{};
+
     auto commandIndex = command.find_first_of(' ');
 
     auto value = strToCommand.find(command.substr(0, commandIndex));
@@ -37,8 +39,8 @@ std::string CommandProcesser::process(std::string_view command)
         case commands::LED:{
             auto commandBuffer = generateLedCommand(command.substr(commandIndex + 1, command.size() - commandIndex -1));
             comChannel.peripheral(commandBuffer.data(), commandBuffer.size());
-            // get answer from peripheral
-            return "Led answer";
+            auto resultSize = comChannel.getAnswer(answerBuffer.data(), answerBuffer.size(), smp::action::peripheral);
+            return {answerBuffer.data() + sizeof(smp::header), answerBuffer.data() + sizeof(smp::header) + resultSize};
         }
         case commands::LOAD:
             throw std::logic_error("Command not implemented");

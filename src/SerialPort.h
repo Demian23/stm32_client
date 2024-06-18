@@ -16,8 +16,8 @@ public:
     SerialPort(const SerialPort &) = delete;
     SerialPort &operator=(const SerialPort &) = delete;
 
-    int32_t write(const void *buffer, int32_t size);
-    int32_t read(void *buffer, int32_t size);
+    uint32_t write(const void *buffer, uint32_t size);
+    uint32_t read(void *buffer, uint32_t size);
     ~SerialPort();
 
 private:

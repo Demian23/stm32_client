@@ -14,9 +14,6 @@ constexpr auto handshakeBufferSizeInBytes =
 void Channel::handshake()
 {
     auto res = port.write(handshakeBuffer.data(), handshakeBufferSizeInBytes);
-    if (res == -1) {
-        throw ErrnoException("Can't write handshake");
-    }
     if (res != handshakeBufferSizeInBytes) {
         throw std::logic_error(
             "Can't write serial port whole message, partly not implemented");
@@ -29,9 +26,6 @@ void Channel::handshakeAnswer()
     std::array<uint8_t, buffSize> buffer{}; // format handshake_start_word * 4,
                                       // start_word, packet_size, id
     auto res = port.read(static_cast<void*>(buffer.data()), buffer.size());
-    if (res == -1) {
-        throw ErrnoException("Can't read handshake answer");
-    }
     if (res != buffSize) {
         throw std::logic_error(
             "Can't read serial port whole message, partly not implemented");
@@ -57,13 +51,13 @@ Channel::Channel(std::string_view portName, uint32_t baudRate)
     : port{portName, baudRate}, startWord{}, maxPacketSize{}, id{}
 {}
 
-void Channel::load(const void *buffer, size_t size)
+void Channel::load(const void *buffer, uint32_t size)
 {
     port.write(buffer, size);
     throw std::logic_error("Load action on channel not implemented");
 }
 
-void Channel::peripheral(const uint8_t *buffer, size_t size)
+void Channel::peripheral(const uint8_t *buffer, uint16_t size)
 {
     static union {
         enum { static_buffer_size = 128 };
@@ -88,13 +82,35 @@ void Channel::peripheral(const uint8_t *buffer, size_t size)
     std::copy(buffer, buffer + size, packet.headerAndData.data.begin());
 
     auto res = port.write(packet.buffer.data(), packetLength);
-    if (res == -1) {
-        throw ErrnoException("Can't write serial port");
-    }
     if (res != packetLength) {
         throw std::logic_error(
             "Can't write serial port whole message, partly not implemented");
     }
+}
+
+uint16_t Channel::getAnswer(uint8_t *buffer, uint16_t size, smp::action on)
+{
+    // wrong implementation
+    uint16_t flagsExpected = 0x8000 + on;
+    uint16_t answerSize = 0;
+    bool done = false;
+    while(!done){
+        answerSize += port.read(buffer + answerSize, size);
+        if(answerSize >= 16){
+            auto headerView = reinterpret_cast<smp::header*>(buffer);
+            if(headerView->startWord == startWord && headerView->connectionId == id &&
+                (headerView->flags & flagsExpected) && answerSize == headerView->packetLength)
+            {
+                auto hash = djb2(buffer, 10); // header before hash
+                hash = djb2(buffer, size, hash);
+                if(hash != headerView->hash){
+                    answerSize = 0;
+                }
+                done = true;
+            }
+        }
+    }
+    return answerSize;
 }
 
 bool Channel::goodbye() noexcept
