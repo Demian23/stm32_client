@@ -9,4 +9,7 @@ add_executable(stm32_client main.cpp
         CommandProcesser.h
         ProtocolMsg.h
         LocalStatusCode.h
+        BinMsg.cpp
+        BinMsg.h
+        LoadMsg.h
 )

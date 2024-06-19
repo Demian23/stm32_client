@@ -24,6 +24,8 @@ struct header {
     // data -> byte array that depends on flags
 };
 
+constexpr auto sizeBeforeHashField = sizeof(header) - sizeof(uint32_t);
+
 inline constexpr uint32_t djb2(const uint8_t *buffer, size_t size,
                                uint32_t start = 5381) noexcept
 {

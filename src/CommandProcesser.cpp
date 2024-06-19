@@ -1,8 +1,8 @@
 #include "CommandProcesser.h"
-#include "ErrnoException.h"
 #include "ProtocolMsg.h"
+#include "LocalStatusCode.h"
 #include <charconv>
-#include <format>
+#include <iostream>
 #include <unordered_map>
 
 static std::array<uint8_t, 3> generateLedCommand(std::string_view command);
@@ -99,7 +99,7 @@ std::string CommandProcesser::startCommand()
     comChannel.handshake();
     auto result = comChannel.handshakeAnswer();
     if (result == LocalStatusCode::Ok) {
-        return std::format("Values: {}", comChannel.values());
+        return "Values: " + comChannel.values();
     }
     auto translate = localStatusCodeToString.find(result);
     if(translate != localStatusCodeToString.cend()){
@@ -111,25 +111,21 @@ std::string CommandProcesser::startCommand()
 
 std::string CommandProcesser::ledCommand(std::string_view command)
 {
-    union{
-        struct {
-            smp::header header;
-            smp::StatusCode code;
-        } expectedAnswer;
-        std::array<uint8_t, sizeof(expectedAnswer)> buffer{};
-    } answer;
     std::string resultString;
+    std::array<uint8_t, sizeof(smp::header) + sizeof(smp::StatusCode)> answerBuffer{};
+    uint16_t expectedFlags = smp::action::peripheral; // maybe led include too
     auto msg = generateLedCommand(command);
     comChannel.peripheral(msg.data(), msg.size());
-    uint16_t expectedFlags = smp::action::peripheral; // maybe led include too
-    auto result = comChannel.getHeaderedMsg(answer.buffer.data(), answer.buffer.size(), expectedFlags);
+    auto result = comChannel.getHeaderedMsg(answerBuffer.data(), answerBuffer.size(), expectedFlags);
     if(result.localCode == LocalStatusCode::Ok){
-        switch(answer.expectedAnswer.code){
+        switch(auto code =
+                *reinterpret_cast<smp::StatusCode*>(answerBuffer.data() + sizeof(smp::header)); code)
+        {
             case smp::StatusCode::Ok:
                 resultString = "Led operation succeed";
                 break;
             default:
-                resultString = "Error with code" + std::to_string(answer.expectedAnswer.code);
+                resultString = "Error with code" + std::to_string(code);
         }
     } else {
         auto translate = localStatusCodeToString.find(result.localCode);
@@ -140,4 +136,27 @@ std::string CommandProcesser::ledCommand(std::string_view command)
         }
     }
     return resultString;
+}
+
+// write as coroutine?
+std::string CommandProcesser::loadCommand(std::string_view command)
+{
+    smp::BinMsg msg(command);
+    LocalStatusCode result{};
+    do{
+        result = comChannel.load(msg);
+        auto loadPercent = msg.getWrittenBytes() / msg.getMsgSize(); 
+        std::cout << "% loaded to device: " << loadPercent << '\n'; // TODO find better place for it 
+    }while(result == LocalStatusCode::Ok);
+    if(result == LocalStatusCode::NothingToWrite){
+        // wait answer for writing into flash memory 
+        return "Loaded to device";
+    } else {
+        auto translate = localStatusCodeToString.find(result);
+        if(translate != localStatusCodeToString.cend()){
+            return translate->second;
+        } else {
+            return "Unknown error";
+        }
+    }
 }

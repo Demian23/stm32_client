@@ -8,4 +8,6 @@ enum class LocalStatusCode {
     WrongFlags,
     BufferToSmall,
     WrongHash,
+    NothingToWrite,
+    LoadAnswerNotEqual,
 };

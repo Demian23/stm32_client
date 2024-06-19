@@ -1,8 +1,9 @@
 #include "Channel.h"
-#include "ErrnoException.h"
 #include "LocalStatusCode.h"
 #include "Protocol.h"
+#include "LoadMsg.h"
 #include <algorithm>
+#include <cstdint>
 
 namespace smp {
 
@@ -55,12 +56,6 @@ Channel::Channel(std::string_view portName, uint32_t baudRate)
     : port{portName, baudRate}, startWord{}, maxPacketSize{}, id{}
 {}
 
-void Channel::load(const void *buffer, uint32_t size)
-{
-    port.write(buffer, size);
-    throw std::logic_error("Load action on channel not implemented");
-}
-
 void Channel::peripheral(const uint8_t *buffer, uint16_t size)
 {
     static union {
@@ -78,7 +73,7 @@ void Channel::peripheral(const uint8_t *buffer, uint16_t size)
                                          .connectionId = id,
                                          .flags = action::peripheral};
 
-    auto hash = djb2(packet.buffer.data(), 10); // header before hash
+    auto hash = djb2(packet.buffer.data(), sizeBeforeHashField); 
     hash = djb2(buffer, size, hash);
     packet.headerAndData.packetHeader.hash = hash;
 
@@ -102,7 +97,7 @@ ReadResult Channel::getHeaderedMsg(uint8_t *outBuffer, uint16_t bufferSize, uint
 
     requestFlags |= 0x8000;
 
-    if(outBuffer == nullptr && bufferSize == 0 && bufferSize < readSize){
+    if(outBuffer == nullptr || bufferSize == 0 || bufferSize < readSize){
         throw std::logic_error("Nullptr, 0 or too small sized outBuffer");
     }
 
@@ -119,7 +114,7 @@ ReadResult Channel::getHeaderedMsg(uint8_t *outBuffer, uint16_t bufferSize, uint
         }
 
         if(!done && headerView != nullptr && answerSize == readSize){
-            auto hash = djb2(outBuffer, 10); // header before hash
+            auto hash = djb2(outBuffer, sizeBeforeHashField); 
             hash = djb2(outBuffer + sizeof(smp::header),
                         answerSize - sizeof(smp::header), hash);
             if(headerView->hash == hash){
@@ -144,7 +139,7 @@ bool Channel::goodbye() noexcept
                      .packetLength = sizeof(header),
                      .connectionId = id,
                      .flags = action::goodbye};
-    auto hash = djb2(packet.buffer.data(), 10); // header before hash
+    auto hash = djb2(packet.buffer.data(), sizeBeforeHashField); // header before hash
     packet.header.hash = hash;
 
     auto res = port.write(packet.buffer.data(), packet.buffer.size());
@@ -183,6 +178,57 @@ LocalStatusCode Channel::headerCheck(const smp::header* headerView, uint16_t req
         result = LocalStatusCode::WrongStartWord;
     }
     return result;
+}
+
+LocalStatusCode Channel::load(BinMsg& msg)
+{
+    auto leftToWrite= msg.buffer.size() - msg.written;
+    if(leftToWrite > 0){
+        union{
+            LoadHeader header;
+            std::array<uint8_t, sizeof(header)> buffer{};
+        } packet;
+        std::array<uint8_t, sizeof(LoadHeader)> answer;
+
+        leftToWrite = leftToWrite > maxPacketSize - sizeof(LoadHeader) ? maxPacketSize - sizeof(LoadHeader) : leftToWrite;
+        packet.header = {.header{.startWord = startWord, .packetLength = static_cast<uint16_t>(leftToWrite), .connectionId = id, .flags = action::load}, .packetId = msg.nextPacketId, .wholeMsgSize = static_cast<uint32_t>(msg.buffer.size())};
+        auto hash = djb2(packet.buffer.data(), sizeBeforeHashField); // header before hash
+        hash = djb2(packet.buffer.data() + sizeof(header), sizeof(LoadHeader) - sizeof(header), hash);
+        hash = djb2(reinterpret_cast<const uint8_t*>(msg.buffer.data()) + msg.written, leftToWrite, hash);
+        packet.header.header.hash = hash;
+
+        auto headerLeft = sizeof(LoadHeader); 
+        auto currentPos = packet.buffer.data();
+        while(headerLeft){
+            auto written = port.write(currentPos, headerLeft);
+            currentPos += written; headerLeft -= written;
+        }
+        while(leftToWrite){
+            auto written = port.write(msg.buffer.data() + msg.written, leftToWrite);
+            msg.written += written; leftToWrite -= written;
+        }
+        msg.nextPacketId += 1;
+
+        // if success send header with flags high set and new hash
+        // and if not send common header with StatusCode (size 18)
+        // TODO currently not implemented
+        auto result = getHeaderedMsg(answer.data(), answer.size(), 0x8000 + action::load);
+        if(result.localCode == LocalStatusCode::Ok && result.answerSize == answer.size()){
+            packet.header.header.flags = 0x8000 + action::load;
+            hash = djb2(packet.buffer.data(), sizeBeforeHashField); // header before hash
+            hash = djb2(packet.buffer.data() + sizeof(header), sizeof(LoadHeader) - sizeof(header), hash);
+            packet.header.header.hash = hash;
+            if(std::equal(packet.buffer.cbegin(), packet.buffer.cend(), answer.cbegin(), answer.cend())){
+                return LocalStatusCode::Ok;
+            } else {
+                return LocalStatusCode::LoadAnswerNotEqual;
+            }
+        } else {
+            return result.localCode;
+        }
+    } else {
+        return LocalStatusCode::NothingToWrite;
+    }
 }
 
 } // namespace smp
