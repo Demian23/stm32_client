@@ -1,7 +1,7 @@
 #include "CommandProcesser.h"
 #include "ErrnoException.h"
-#include <iostream>
 #include <chrono>
+#include <iostream>
 
 void exceptionHandler();
 
@@ -23,7 +23,7 @@ int main(int argc, char **argv)
         std::string command;
         while (std::getline(std::cin, command)) {
             auto answer = processer.process(command);
-            if(answer.empty())
+            if (answer.empty())
                 break;
             std::cout << answer << std::endl;
         }

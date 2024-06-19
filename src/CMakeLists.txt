@@ -8,4 +8,5 @@ add_executable(stm32_client main.cpp
         CommandProcesser.cpp
         CommandProcesser.h
         ProtocolMsg.h
+        LocalStatusCode.h
 )

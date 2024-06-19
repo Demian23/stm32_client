@@ -15,20 +15,20 @@ public:
     explicit ErrnoException(const std::string &msg) noexcept
         : std::logic_error(msg), _errno(
 #ifdef _WIN32
-            GetLastError()
+                                     GetLastError()
 #else
-            errno
+                                     errno
 #endif
-        )
+                                 )
     {}
     explicit ErrnoException(const char *msg) noexcept
         : std::logic_error(msg), _errno(
 #ifdef _WIN32
-            GetLastError()
+                                     GetLastError()
 #else
-            errno
+                                     errno
 #endif
-        )
+                                 )
     {}
     [[nodiscard]] inline int errno_code() const noexcept { return _errno; }
     ~ErrnoException() noexcept override = default;

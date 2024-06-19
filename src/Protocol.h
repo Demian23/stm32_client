@@ -20,16 +20,19 @@ struct header {
     uint32_t packetLength; // header + data
     uint16_t connectionId;
     uint16_t flags; // action only now, if success sender set high bit
-    uint32_t hash; // of header + data
+    uint32_t hash;  // of header + data
     // data -> byte array that depends on flags
 };
 
-inline constexpr uint32_t djb2(const uint8_t* buffer, size_t size, uint32_t start = 5381) noexcept
+inline constexpr uint32_t djb2(const uint8_t *buffer, size_t size,
+                               uint32_t start = 5381) noexcept
 {
-    for(int i = 0; i < size; i++){
+    for (int i = 0; i < size; i++) {
         start = ((start << 5) + start) + buffer[i];
     }
     return start;
 }
+
+enum StatusCode : uint16_t { Invalid, Ok, NoSuchCommand, NoSuchDevice };
 
 } // namespace smp
