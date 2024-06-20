@@ -1,6 +1,7 @@
 #include "Channel.h"
 #include "LocalStatusCode.h"
 #include "Protocol.h"
+#include <stdexcept>
 #include <algorithm>
 #include <cstdint>
 
@@ -57,7 +58,7 @@ Channel::Channel(std::string_view portName, uint32_t baudRate)
 
 void Channel::peripheral(LedMsg msg)
 {
-    BufferedLedPacket ledPacket;
+    BufferedLedPacket ledPacket{};
     ledPacket.packet = {.baseHeader{.startWord = startWord,
                                     .packetLength = ledPacket.buffer.size(),
                                     .connectionId = id,

@@ -107,7 +107,7 @@ std::string CommandProcesser::ledCommand(std::string_view command)
 {
     std::string resultString;
 
-    smp::LedMsg msg;
+    smp::LedMsg msg{};
     std::array<uint8_t, sizeof(smp::header) + sizeof(smp::StatusCode)>
         answerBuffer{};
 
