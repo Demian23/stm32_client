@@ -1,8 +1,9 @@
 #pragma once
+#include "BinMsg.h"
 #include "LocalStatusCode.h"
+#include "Msg.h"
 #include "Protocol.h"
 #include "SerialPort.h"
-#include "BinMsg.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -22,11 +23,12 @@ public:
     void handshake(); // start handshake word is 0xAE711707
     LocalStatusCode handshakeAnswer();
     bool goodbye() noexcept;
-    void peripheral(const uint8_t *buffer, uint16_t size);
+    void peripheral(LedMsg msg);
     // assumed that outBuffer is big enough
-    ReadResult getHeaderedMsg(uint8_t *outBuffer, uint16_t bufferSize, uint16_t requestFlags);
+    ReadResult getHeaderedMsg(uint8_t *outBuffer, uint16_t bufferSize,
+                              uint16_t requestFlags);
     // rewrite as coroutine?
-    LocalStatusCode load(BinMsg& msg);
+    LocalStatusCode load(BinMsg &msg);
     ~Channel();
 
     [[nodiscard]] std::string values() const;
@@ -37,7 +39,9 @@ private:
     uint16_t maxPacketSize;
     uint16_t id;
 
-    LocalStatusCode headerCheck(const smp::header* headerView, uint16_t requestedFlags, uint16_t buffSize) const;
+    LocalStatusCode headerCheck(const smp::header *headerView,
+                                uint16_t requestedFlags,
+                                uint16_t buffSize) const;
 };
 
 } // namespace smp

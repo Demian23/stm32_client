@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Msg.h"
 #include <array>
 #include <cstdint>
 
@@ -24,6 +25,8 @@ struct header {
     // data -> byte array that depends on flags
 };
 
+static_assert(sizeof(header) == 16, "No packing required");
+
 constexpr auto sizeBeforeHashField = sizeof(header) - sizeof(uint32_t);
 
 inline constexpr uint32_t djb2(const uint8_t *buffer, size_t size,
@@ -36,5 +39,38 @@ inline constexpr uint32_t djb2(const uint8_t *buffer, size_t size,
 }
 
 enum StatusCode : uint16_t { Invalid, Ok, NoSuchCommand, NoSuchDevice };
+
+#pragma pack(push, 2)
+struct LedPacket {
+    header baseHeader;
+    peripheral_devices dev;
+    LedMsg msg;
+};
+#pragma pack(pop)
+
+static_assert(sizeof(LedPacket) ==
+              sizeof(header) + sizeof(LedMsg) + sizeof(peripheral_devices));
+
+struct LoadHeader {
+    header baseHeader;
+    LoadMsg msg;
+};
+
+static_assert(sizeof(LoadHeader) == sizeof(header) + sizeof(LoadMsg));
+
+union BufferedHeader {
+    header header;
+    std::array<uint8_t, sizeof(header)> buffer;
+};
+
+union BufferedLedPacket {
+    LedPacket packet;
+    std::array<uint8_t, sizeof(LedPacket)> buffer;
+};
+
+union BufferedLoadHeader {
+    LoadHeader header;
+    std::array<uint8_t, sizeof(header)> buffer;
+};
 
 } // namespace smp

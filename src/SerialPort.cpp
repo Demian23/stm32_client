@@ -4,8 +4,9 @@
 #ifdef _WIN32
 
 SerialPort::SerialPort(std::string_view port, uint32_t baudRate)
-    : portDescriptor(CreateFile(port.data(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-                   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr))
+    : portDescriptor(CreateFile(port.data(), GENERIC_READ | GENERIC_WRITE, 0,
+                                nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                                nullptr))
 {
     if (portDescriptor == INVALID_HANDLE_VALUE) {
         throw ErrnoException("Can't open port, WinAPI error", GetLastError());

@@ -7,9 +7,8 @@ add_executable(stm32_client main.cpp
         ErrnoException.h
         CommandProcesser.cpp
         CommandProcesser.h
-        ProtocolMsg.h
         LocalStatusCode.h
         BinMsg.cpp
         BinMsg.h
-        LoadMsg.h
+        Msg.h
 )
