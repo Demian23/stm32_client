@@ -1,8 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <string_view>
 #include <vector>
-#include <cstdint>
 
 namespace smp {
 
@@ -24,6 +24,7 @@ private:
     std::vector<char> buffer;
     uint32_t written;
     uint32_t nextPacketId;
+    uint32_t hash;
 };
 
 }; // namespace smp

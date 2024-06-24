@@ -2,20 +2,19 @@
 #include "LocalStatusCode.h"
 #include "Msg.h"
 #include "Protocol.h"
+#include <algorithm>
 #include <charconv>
-#include <iostream>
+#include <string_view>
 #include <unordered_map>
 
-static void fillLedCommand(std::string_view command, smp::LedMsg &msg);
-static const std::unordered_map localStatusCodeToString{
-    std::pair{LocalStatusCode::WrongHash, "Wrong hash"},
-    {LocalStatusCode::BufferToSmall, "Buffer too small"},
-    {LocalStatusCode::WrongId, "Wrong response id"},
-    {LocalStatusCode::WrongStartWord, "Wrong start word"},
-    {LocalStatusCode::HandshakeAnswerHeaderNotEqual,
-     "Handshake answer header not equal"},
-    {LocalStatusCode::WrongFlags, "Header flags are different"}};
+namespace {
 
+bool checkAnswer(const smp::BufferedAnswer& answer, smp::ReadResult readResult, std::string& error) noexcept;
+constexpr std::string_view localCodeToStr(LocalStatusCode code) noexcept;
+constexpr std::string_view codeToStr(smp::StatusCode code) noexcept;
+void fillLedCommand(std::string_view command, smp::LedMsg &msg) ;
+
+}
 CommandProcesser::CommandProcesser(std::string_view portName, size_t baudRate)
     : comChannel(portName, baudRate)
 {}
@@ -54,7 +53,103 @@ std::string CommandProcesser::process(std::string_view command)
     return "";
 }
 
-static void fillLedCommand(std::string_view command, smp::LedMsg &msg)
+std::string CommandProcesser::startCommand()
+{
+    comChannel.handshake();
+    auto result = comChannel.handshakeAnswer();
+    if (result == LocalStatusCode::Ok) {
+        return "Values: " + comChannel.values();
+    } else {
+        return localCodeToStr(result).data();
+    }
+}
+
+std::string CommandProcesser::ledCommand(std::string_view command)
+{
+    std::string resultString = "Led operation succeeded";
+
+    smp::LedMsg msg{};
+    smp::BufferedAnswer answer{};
+
+    fillLedCommand(command, msg);
+
+    comChannel.peripheral(msg);
+
+    auto result = comChannel.getHeaderedMsg(
+        answer.buffer.data(), answer.buffer.size(), smp::action::peripheral);
+    checkAnswer(answer, result, resultString);
+    return resultString;
+}
+
+// write as coroutine?
+std::string CommandProcesser::loadCommand(std::string_view command)
+{
+    std::string resultStr{};
+    smp::BufferedAnswer receiver{};
+    smp::BinMsg msg(command);
+
+    comChannel.startLoad(msg);
+
+    auto readResult = comChannel.getHeaderedMsg(receiver.buffer.data(), receiver.buffer.size(), smp::action::startLoad);
+
+    if(checkAnswer(receiver, readResult, resultStr)){
+        
+        LocalStatusCode result = comChannel.load(msg);
+        while(result == LocalStatusCode::Ok){
+            readResult = comChannel.getHeaderedMsg(receiver.buffer.data(), receiver.buffer.size(), smp::action::loading);
+            if(checkAnswer(receiver, readResult, resultStr)){
+                result = comChannel.load(msg);
+            }
+        }
+
+        if(result == LocalStatusCode::NothingToWrite){
+            // start write to memory?
+            // wait written answer
+            resultStr = "Loaded";
+        } 
+    }
+    return resultStr;
+}
+
+
+namespace{
+
+constexpr std::string_view localCodeToStr(LocalStatusCode code) noexcept
+{
+    using namespace std::string_view_literals;
+    constexpr std::array localStatusCodeToString{
+        std::pair{LocalStatusCode::WrongHash, "Wrong hash"sv},
+        std::pair{LocalStatusCode::BufferToSmall, "Buffer too small"sv},
+        std::pair{LocalStatusCode::WrongId, "Wrong response id"sv},
+        std::pair{LocalStatusCode::WrongStartWord, "Wrong start word"sv},
+        std::pair{LocalStatusCode::HandshakeAnswerHeaderNotEqual,
+         "Handshake answer header not equal"sv},
+        std::pair{LocalStatusCode::WrongFlags, "Header flags are different"sv}};
+    auto res = std::find_if(localStatusCodeToString.cbegin(), localStatusCodeToString.cend(), [=](auto&& codeAndStr){return codeAndStr.first == code;});
+    if(res != localStatusCodeToString.cend()){
+        return res->second;
+    } else {
+        return "Unkonwn error";
+    }
+}
+
+constexpr std::string_view codeToStr(smp::StatusCode code) noexcept
+{
+    using namespace std::string_view_literals;
+    constexpr std::array statusCodeToStr{
+        std::pair{smp::StatusCode::Invalid, "Invalid status code"sv},
+        std::pair{smp::StatusCode::Ok, "Success"sv},
+        std::pair{smp::StatusCode::InvalidId, "Invalid id"sv},
+    };
+    auto res = std::find_if(statusCodeToStr.cbegin(), statusCodeToStr.cend(), [=](auto&& codeAndStr){return codeAndStr.first == code;});
+    if(res != statusCodeToStr.cend()){
+        return res->second;
+    } else {
+        return "Unkonwn smp error";
+    }
+}
+
+void fillLedCommand(std::string_view command, smp::LedMsg &msg) 
 {
     using namespace std::string_view_literals;
     static const std::unordered_map strToLedOp{
@@ -76,6 +171,7 @@ static void fillLedCommand(std::string_view command, smp::LedMsg &msg)
         if (val > 0xF) {
             throw std::logic_error("Led number must be <= 0xF");
         }
+        msg.ledDevice = val;
     } else {
         msg.ledDevice = 0xF;
     }
@@ -88,75 +184,22 @@ static void fillLedCommand(std::string_view command, smp::LedMsg &msg)
     }
 }
 
-std::string CommandProcesser::startCommand()
+bool checkAnswer(const smp::BufferedAnswer& answer, smp::ReadResult readResult, std::string& error) noexcept
 {
-    comChannel.handshake();
-    auto result = comChannel.handshakeAnswer();
-    if (result == LocalStatusCode::Ok) {
-        return "Values: " + comChannel.values();
-    }
-    auto translate = localStatusCodeToString.find(result);
-    if (translate != localStatusCodeToString.cend()) {
-        return translate->second;
-    } else {
-        return "Unknown error";
-    }
-}
-
-std::string CommandProcesser::ledCommand(std::string_view command)
-{
-    std::string resultString;
-
-    smp::LedMsg msg{};
-    std::array<uint8_t, sizeof(smp::header) + sizeof(smp::StatusCode)>
-        answerBuffer{};
-
-    fillLedCommand(command, msg);
-
-    comChannel.peripheral(msg);
-    auto result = comChannel.getHeaderedMsg(
-        answerBuffer.data(), answerBuffer.size(), smp::action::peripheral);
-    if (result.localCode == LocalStatusCode::Ok) {
-        switch (auto code = *reinterpret_cast<smp::StatusCode *>(
-                    answerBuffer.data() + sizeof(smp::header));
-                code) {
-        case smp::StatusCode::Ok:
-            resultString = "Led operation succeed";
-            break;
-        default:
-            resultString = "Error with code" + std::to_string(code);
-        }
-    } else {
-        auto translate = localStatusCodeToString.find(result.localCode);
-        if (translate != localStatusCodeToString.cend()) {
-            return translate->second;
+    auto [code, received] = readResult;
+    if(code == LocalStatusCode::Ok){
+        if(received == answer.buffer.size()){
+           if(answer.answer.code == smp::StatusCode::Ok){
+               return true;
+           } else{
+                error = codeToStr(answer.answer.code);
+           }
         } else {
-            return "Unknown error";
+            error = "Wrong size";
         }
-    }
-    return resultString;
-}
-
-// write as coroutine?
-std::string CommandProcesser::loadCommand(std::string_view command)
-{
-    smp::BinMsg msg(command);
-    LocalStatusCode result{};
-    do {
-        result = comChannel.load(msg);
-        auto loadPercent = msg.getWrittenBytes() / msg.getMsgSize();
-        std::cout << "% loaded to device: " << loadPercent
-                  << '\n'; // TODO find better place for it
-    } while (result == LocalStatusCode::Ok);
-    if (result == LocalStatusCode::NothingToWrite) {
-        // wait answer for writing into flash memory
-        return "Loaded to device";
     } else {
-        auto translate = localStatusCodeToString.find(result);
-        if (translate != localStatusCodeToString.cend()) {
-            return translate->second;
-        } else {
-            return "Unknown error";
-        }
+        error = localCodeToStr(code);
     }
+    return false;
+}
 }

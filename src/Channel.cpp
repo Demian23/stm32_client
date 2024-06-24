@@ -1,9 +1,9 @@
 #include "Channel.h"
 #include "LocalStatusCode.h"
 #include "Protocol.h"
-#include <stdexcept>
 #include <algorithm>
 #include <cstdint>
+#include <stdexcept>
 
 namespace smp {
 
@@ -101,8 +101,9 @@ ReadResult Channel::getHeaderedMsg(uint8_t *outBuffer, uint16_t bufferSize,
             auto statusCode = headerCheck(headerView, requestFlags, bufferSize);
             if (statusCode != LocalStatusCode::Ok) {
                 result = {.localCode = statusCode, .answerSize = answerSize};
-                readSize = headerView->packetLength;
                 done = true;
+            } else {
+                readSize = headerView->packetLength;
             }
         }
 
@@ -113,11 +114,11 @@ ReadResult Channel::getHeaderedMsg(uint8_t *outBuffer, uint16_t bufferSize,
             if (headerView->hash == hash) {
                 result = {.localCode = LocalStatusCode::Ok,
                           .answerSize = answerSize};
-                done = true;
             } else {
                 result = {.localCode = LocalStatusCode::WrongHash,
                           .answerSize = answerSize};
             }
+            done = true;
         }
     }
     return result;
@@ -178,11 +179,9 @@ LocalStatusCode Channel::load(BinMsg &msg)
 {
     auto leftToWrite = msg.buffer.size() - msg.written;
     if (leftToWrite > 0) {
-        BufferedLoadHeader packet;
+        BufferedLoadHeader packet{};
 
-        std::array<uint8_t, sizeof(LoadHeader)> answer;
-
-        leftToWrite = leftToWrite > maxPacketSize - sizeof(LoadHeader)
+        auto msgSize = leftToWrite > maxPacketSize - sizeof(LoadHeader)
                           ? maxPacketSize - sizeof(LoadHeader)
                           : leftToWrite;
         packet.header = {
@@ -190,9 +189,9 @@ LocalStatusCode Channel::load(BinMsg &msg)
                         .packetLength = static_cast<uint16_t>(
                             leftToWrite + sizeof(LoadHeader)),
                         .connectionId = id,
-                        .flags = action::load},
+                        .flags = action::loading},
             .msg = {.packetId = msg.nextPacketId,
-                    .wholeMsgSize = static_cast<uint32_t>(msg.buffer.size())}};
+                    .msgHash= static_cast<uint32_t>(msg.hash)}};
         auto hash = djb2(packet.buffer.data(), sizeBeforeHashField);
         hash =
             djb2(packet.buffer.data() + sizeof(header), sizeof(LoadMsg), hash);
@@ -201,46 +200,38 @@ LocalStatusCode Channel::load(BinMsg &msg)
                     leftToWrite, hash);
         packet.header.baseHeader.hash = hash;
 
-        auto headerLeft = sizeof(LoadHeader);
-        auto currentPos = packet.buffer.data();
-        while (headerLeft) {
-            auto written = port.write(currentPos, headerLeft);
-            currentPos += written;
-            headerLeft -= written;
+        uint32_t offset = 0;
+        while (sizeof(packet) - offset) {
+            offset += port.write(packet.buffer.data() + offset, sizeof(packet) - offset);
         }
-        while (leftToWrite) {
-            auto written =
-                port.write(msg.buffer.data() + msg.written, leftToWrite);
-            msg.written += written;
-            leftToWrite -= written;
-        }
-        msg.nextPacketId += 1;
 
-        // if success send header with flags high set and new hash
-        // and if not send common header with StatusCode (size 18)
-        // TODO currently not implemented
-        auto result =
-            getHeaderedMsg(answer.data(), answer.size(), action::load);
-        if (result.localCode == LocalStatusCode::Ok &&
-            result.answerSize == answer.size()) {
-            packet.header.baseHeader.flags = 0x8000 + action::load;
-            hash = djb2(packet.buffer.data(),
-                        sizeBeforeHashField); // header before hash
-            hash = djb2(packet.buffer.data() + sizeof(header), sizeof(LoadMsg),
-                        hash);
-            packet.header.baseHeader.hash = hash;
-            if (std::equal(packet.buffer.cbegin(), packet.buffer.cend(),
-                           answer.cbegin(), answer.cend())) {
-                return LocalStatusCode::Ok;
-            } else {
-                return LocalStatusCode::LoadAnswerNotEqual;
-            }
-        } else {
-            return result.localCode;
+        offset = 0;
+        while (msgSize - offset) {
+            offset += port.write(msg.buffer.data() + msg.written + offset, msgSize - offset);
         }
+        msg.written += offset;
+        msg.nextPacketId += 1;
+        return LocalStatusCode::Ok;
     } else {
         return LocalStatusCode::NothingToWrite;
     }
 }
 
+void Channel::startLoad(BinMsg& msg)
+{
+    BufferedStartLoadHeader packet{};
+    auto msgHash = smp::djb2(reinterpret_cast<const uint8_t*>(msg.buffer.data()), msg.buffer.size());
+    msg.hash = msgHash;
+    packet.content = {.baseHeader = {.startWord = startWord, .packetLength = packet.buffer.size(), .connectionId = id, .flags = action::startLoad}, .msg = {.wholeMsgSize = msg.getMsgSize(), .wholeMsgHash = msgHash}};
+    auto hash = djb2(packet.buffer.data(),
+                sizeBeforeHashField); 
+    hash = djb2(packet.buffer.data() + sizeof(header), sizeof(StartLoadMsg),
+            hash);
+    packet.content.baseHeader.hash = hash;
+    uint32_t offset = 0;
+    while(packet.buffer.size() - offset){
+        offset += port.write(packet.buffer.data() + offset, packet.buffer.size() - offset);
+    }
+
+}
 } // namespace smp

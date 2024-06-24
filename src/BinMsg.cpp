@@ -5,7 +5,7 @@
 namespace smp {
 
 BinMsg::BinMsg(std::string_view binFilePath)
-    : buffer{}, written{}, nextPacketId{}
+    : buffer{}, written{}, nextPacketId{}, hash{}
 {
     using namespace std::filesystem;
 
@@ -26,5 +26,6 @@ BinMsg::BinMsg(std::string_view binFilePath)
 }
 uint32_t BinMsg::getWrittenBytes() const noexcept { return written; };
 uint32_t BinMsg::getMsgSize() const noexcept { return buffer.size(); }
+
 
 }; // namespace smp

@@ -29,6 +29,7 @@ public:
                               uint16_t requestFlags);
     // rewrite as coroutine?
     LocalStatusCode load(BinMsg &msg);
+    void startLoad(BinMsg& msg); // possible change of prototype in favour of return LocalStatusCode (espcially if timeout would be implemented)
     ~Channel();
 
     [[nodiscard]] std::string values() const;

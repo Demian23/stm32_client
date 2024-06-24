@@ -12,7 +12,7 @@ enum led_ops : uint8_t { ON, OFF, TOGGLE };
 
 struct LoadMsg {
     uint32_t packetId;
-    uint32_t wholeMsgSize;
+    uint32_t msgHash;
 };
 
 struct LedMsg {

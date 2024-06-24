@@ -10,7 +10,8 @@ namespace smp {
 enum action : uint8_t {
     handshake = 0, // return id, startWord, desirable size of packet
     peripheral,
-    load,
+    startLoad,
+    loading,
     goodbye
 };
 
@@ -29,16 +30,24 @@ static_assert(sizeof(header) == 16, "No packing required");
 
 constexpr auto sizeBeforeHashField = sizeof(header) - sizeof(uint32_t);
 
-inline constexpr uint32_t djb2(const uint8_t *buffer, size_t size,
+// template?
+inline constexpr uint32_t djb2(const uint8_t *buffer, uint32_t size,
                                uint32_t start = 5381) noexcept
 {
-    for (int i = 0; i < size; i++) {
+    for (uint32_t i = 0; i < size; i++) {
         start = ((start << 5) + start) + buffer[i];
     }
     return start;
 }
 
-enum StatusCode : uint16_t { Invalid, Ok, NoSuchCommand, NoSuchDevice };
+enum StatusCode : uint16_t {
+    Invalid,
+    Ok,
+    NoSuchCommand,
+    NoSuchDevice,
+    HashBroken,
+    InvalidId
+};
 
 #pragma pack(push, 2)
 struct LedPacket {
@@ -58,8 +67,20 @@ struct LoadHeader {
 
 static_assert(sizeof(LoadHeader) == sizeof(header) + sizeof(LoadMsg));
 
+struct StartLoadMsg{
+    uint32_t wholeMsgSize;
+    uint32_t wholeMsgHash;
+};
+
+struct StartLoadHeader{
+    header baseHeader;
+    StartLoadMsg msg;
+};
+
+static_assert(sizeof(StartLoadHeader) == sizeof(header) + sizeof(StartLoadMsg));
+
 union BufferedHeader {
-    header header;
+    smp::header header;
     std::array<uint8_t, sizeof(header)> buffer;
 };
 
@@ -71,6 +92,25 @@ union BufferedLedPacket {
 union BufferedLoadHeader {
     LoadHeader header;
     std::array<uint8_t, sizeof(header)> buffer;
+};
+
+union BufferedStartLoadHeader{
+    StartLoadHeader content;
+    std::array<uint8_t, sizeof(header)> buffer;
+};
+
+#pragma pack(push,2)
+struct Answer{
+	smp::header header;
+	smp::StatusCode code;
+};
+#pragma pack(pop)
+
+static_assert(sizeof(Answer) == sizeof(smp::header) + sizeof(smp::StatusCode));
+
+union BufferedAnswer{
+	Answer answer;
+	std::array<uint8_t, sizeof(answer)> buffer;
 };
 
 } // namespace smp
