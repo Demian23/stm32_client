@@ -10,4 +10,5 @@ enum class LocalStatusCode {
     WrongHash,
     NothingToWrite,
     LoadAnswerNotEqual,
+    Timeout,
 };

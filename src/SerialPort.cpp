@@ -34,11 +34,12 @@ SerialPort::SerialPort(std::string_view port, uint32_t baudRate)
     }
     COMMTIMEOUTS timeouts{};
     timeouts.ReadIntervalTimeout = MAXDWORD; // blocking
+    timeouts.ReadTotalTimeoutConstant = 10000; // timeout for read in 10 seconds
     if (!SetCommTimeouts(portDescriptor, &timeouts)) {
         throw ErrnoException("Can't set port timeouts, WinAPI error",
                              GetLastError());
     }
-    PurgeComm(portDescriptor, PURGE_RXCLEAR | PURGE_TXCLEAR);
+    PurgeComm(portDescriptor, PURGE_RXCLEAR| PURGE_RXABORT | PURGE_TXABORT | PURGE_TXCLEAR);
 }
 
 SerialPort::~SerialPort()
@@ -59,7 +60,7 @@ uint32_t SerialPort::read(void *buffer, uint32_t size)
 {
     DWORD result{};
     if (!ReadFile(portDescriptor, buffer, size, &result, nullptr))
-        throw ErrnoException("Port read error, WinAPI error", GetLastError());
+        throw ErrnoException("Port read error, WinAPI error");
     return static_cast<uint32_t>(result);
 }
 

@@ -1,4 +1,5 @@
 #include "CommandProcesser.h"
+#include "ErrnoException.h"
 #include "LocalStatusCode.h"
 #include "Msg.h"
 #include "Protocol.h"
@@ -20,7 +21,7 @@ CommandProcesser::CommandProcesser(std::string_view portName, size_t baudRate)
     : comChannel(portName, baudRate)
 {}
 
-enum class commands { START, LED, LOAD, STOP };
+enum class commands { START, LED, LOAD, STOP, BOOT};
 
 std::string CommandProcesser::process(std::string_view command)
 {
@@ -29,7 +30,9 @@ std::string CommandProcesser::process(std::string_view command)
         std::pair{"start"sv, commands::START},
         {"LED"sv, commands::LED},
         {"stop"sv, commands::STOP},
-        {"load"sv, commands::LOAD}};
+        {"load"sv, commands::LOAD},
+        {"boot"sv, commands::BOOT},
+    };
 
     auto commandIndex = command.find_first_of(' ');
 
@@ -47,6 +50,8 @@ std::string CommandProcesser::process(std::string_view command)
         case commands::LOAD:
             return loadCommand(command.substr(
                 commandIndex + 1, command.size() - 1 - commandIndex));
+        case commands::BOOT:
+            return bootCommand();
         }
     } else {
         return "No such command";
@@ -100,16 +105,35 @@ std::string CommandProcesser::loadCommand(std::string_view command)
             readResult = comChannel.getHeaderedMsg(receiver.buffer.data(), receiver.buffer.size(), smp::action::loading);
             if(checkAnswer(receiver, readResult, resultStr)){
                 result = comChannel.load(msg);
+            } else {
+                break;
             }
         }
 
         if(result == LocalStatusCode::NothingToWrite){
-            // start write to memory?
-            // wait written answer
-            resultStr = "Loaded";
+            readResult = comChannel.getHeaderedMsg(receiver.buffer.data(), receiver.buffer.size(), smp::action::loading);
+            if(checkAnswer(receiver, readResult, resultStr)){
+                resultStr = "Loaded";
+            }
         } 
     }
     return resultStr;
+}
+
+std::string CommandProcesser::bootCommand()
+{
+    std::string resultString{};
+    smp::BufferedAnswer receiver{};
+    comChannel.boot();
+    // somehow wait on timeout
+    // if out from timeout -> all done, else error
+    auto readResult = comChannel.getHeaderedMsg(receiver.buffer.data(), receiver.buffer.size(), smp::action::boot);
+    if(readResult.localCode == LocalStatusCode::Timeout && !readResult.answerSize){
+        resultString = "Booted!";
+    } else {
+        checkAnswer(receiver, readResult, resultString);
+    }
+    return resultString;
 }
 
 
@@ -125,7 +149,9 @@ constexpr std::string_view localCodeToStr(LocalStatusCode code) noexcept
         std::pair{LocalStatusCode::WrongStartWord, "Wrong start word"sv},
         std::pair{LocalStatusCode::HandshakeAnswerHeaderNotEqual,
          "Handshake answer header not equal"sv},
-        std::pair{LocalStatusCode::WrongFlags, "Header flags are different"sv}};
+        std::pair{LocalStatusCode::WrongFlags, "Header flags are different"sv},
+        std::pair{LocalStatusCode::Timeout, "Timeout"sv}
+    };
     auto res = std::find_if(localStatusCodeToString.cbegin(), localStatusCodeToString.cend(), [=](auto&& codeAndStr){return codeAndStr.first == code;});
     if(res != localStatusCodeToString.cend()){
         return res->second;
@@ -141,6 +167,15 @@ constexpr std::string_view codeToStr(smp::StatusCode code) noexcept
         std::pair{smp::StatusCode::Invalid, "Invalid status code"sv},
         std::pair{smp::StatusCode::Ok, "Success"sv},
         std::pair{smp::StatusCode::InvalidId, "Invalid id"sv},
+        std::pair{smp::StatusCode::WrongMsgSize, "Wrong msg size"sv},
+        std::pair{smp::StatusCode::NoSuchCommand, "NO such command"sv},
+        std::pair{smp::StatusCode::NoSuchDevice, "No such device"sv},
+        std::pair{smp::StatusCode::HashBroken, "Hash broken"sv},
+        std::pair{smp::StatusCode::LoadExtraSize, "Load extra size"sv},
+        std::pair{smp::StatusCode::WaitLoad, "Wait for loading"sv},
+        std::pair{smp::StatusCode::NoMemory, "No memory"sv},
+        std::pair{smp::StatusCode::WaitStartLoad, "Wait for start loading"sv},
+        std::pair{smp::StatusCode::LoadWrongPacket, "Wrong packet id"sv},
     };
     auto res = std::find_if(statusCodeToStr.cbegin(), statusCodeToStr.cend(), [=](auto&& codeAndStr){return codeAndStr.first == code;});
     if(res != statusCodeToStr.cend()){
@@ -203,4 +238,5 @@ bool checkAnswer(const smp::BufferedAnswer& answer, smp::ReadResult readResult, 
     }
     return false;
 }
+
 }

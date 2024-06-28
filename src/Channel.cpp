@@ -23,29 +23,32 @@ void Channel::handshake()
 
 LocalStatusCode Channel::handshakeAnswer()
 {
-    constexpr auto buffSize = handshakeBuffer.size() + sizeof(startWord) +
-                              sizeof(maxPacketSize) + sizeof(id);
-    std::array<uint8_t, buffSize> buffer{}; // format handshake_start_word * 4,
-                                            // start_word, packet_size, id
     uint32_t size = 0;
+    union{
+        struct{
+            std::array<uint8_t, handshakeBuffer.size()> header;
+            uint32_t startWord;
+            uint16_t packetSize;
+            uint16_t id;
+        }con;
+        std::array<uint8_t, sizeof(con)> buffer;
+    }packet{};
+    static_assert(sizeof(packet) == handshakeBuffer.size() + sizeof(uint32_t) + 2 * sizeof(uint16_t));
+
     // TODO add timeouts for read and write
-    while (size != buffSize) {
-        size += port.read(static_cast<void *>(buffer.data() + size),
-                          buffer.size() - size);
+    while (size != packet.buffer.size()) {
+        size += port.read(static_cast<void *>(packet.buffer.data() + size),
+                          packet.buffer.size() - size);
     }
 
-    if (std::equal(buffer.begin(), buffer.begin() + handshakeBuffer.size(),
-                   handshakeBuffer.begin())) {
+    if (std::equal(packet.con.header.cbegin(), packet.con.header.cend(),
+                   handshakeBuffer.cbegin())) {
         // TODO byte ordering can fail here?
         // little endian assumed
-        startWord = *reinterpret_cast<uint32_t *>(
-            (buffer.data() + handshakeBuffer.size())); // no cast from begin to
+        startWord = packet.con.startWord;// no cast from begin to
                                                        // pointer here in msvc
-        maxPacketSize = *reinterpret_cast<uint16_t *>(
-            (buffer.data() + handshakeBuffer.size() + sizeof(startWord)));
-        id = *reinterpret_cast<uint16_t *>(
-            (buffer.data() + handshakeBuffer.size() + sizeof(startWord) +
-             sizeof(maxPacketSize)));
+        maxPacketSize = packet.con.packetSize;
+        id = packet.con.id;
         return LocalStatusCode::Ok;
     } else {
         return LocalStatusCode::HandshakeAnswerHeaderNotEqual;
@@ -95,31 +98,38 @@ ReadResult Channel::getHeaderedMsg(uint8_t *outBuffer, uint16_t bufferSize,
     }
 
     while (!done) {
-        answerSize += port.read(outBuffer + answerSize, readSize - answerSize);
-        if (headerView == nullptr && answerSize == 16) {
-            headerView = reinterpret_cast<const smp::header *>(outBuffer);
-            auto statusCode = headerCheck(headerView, requestFlags, bufferSize);
-            if (statusCode != LocalStatusCode::Ok) {
-                result = {.localCode = statusCode, .answerSize = answerSize};
-                done = true;
-            } else {
-                readSize = headerView->packetLength;
+        auto res = port.read(outBuffer + answerSize, readSize - answerSize);
+        if(res){
+            answerSize += res;
+            if (headerView == nullptr && answerSize == 16) {
+                headerView = reinterpret_cast<const smp::header *>(outBuffer);
+                auto statusCode = headerCheck(headerView, requestFlags, bufferSize);
+                if (statusCode != LocalStatusCode::Ok) {
+                    result = {.localCode = statusCode, .answerSize = answerSize};
+                    done = true;
+                } else {
+                    readSize = headerView->packetLength;
+                }
             }
-        }
-
-        if (!done && headerView != nullptr && answerSize == readSize) {
-            auto hash = djb2(outBuffer, sizeBeforeHashField);
-            hash = djb2(outBuffer + sizeof(smp::header),
+     
+            if (!done && headerView != nullptr && answerSize == readSize) {
+                auto hash = djb2(outBuffer, sizeBeforeHashField);
+                hash = djb2(outBuffer + sizeof(smp::header),
                         answerSize - sizeof(smp::header), hash);
-            if (headerView->hash == hash) {
-                result = {.localCode = LocalStatusCode::Ok,
+                if (headerView->hash == hash) {
+                    result = {.localCode = LocalStatusCode::Ok,
                           .answerSize = answerSize};
-            } else {
-                result = {.localCode = LocalStatusCode::WrongHash,
+                } else {
+                    result = {.localCode = LocalStatusCode::WrongHash,
                           .answerSize = answerSize};
+                }
+                done = true;
             }
-            done = true;
+        } else {
+            done = true; // timeout exit
+            result = {.localCode = LocalStatusCode::Timeout, .answerSize = answerSize};
         }
+        
     }
     return result;
 }
@@ -187,7 +197,7 @@ LocalStatusCode Channel::load(BinMsg &msg)
         packet.header = {
             .baseHeader{.startWord = startWord,
                         .packetLength = static_cast<uint16_t>(
-                            leftToWrite + sizeof(LoadHeader)),
+                            msgSize + sizeof(LoadHeader)),
                         .connectionId = id,
                         .flags = action::loading},
             .msg = {.packetId = msg.nextPacketId,
@@ -197,7 +207,7 @@ LocalStatusCode Channel::load(BinMsg &msg)
             djb2(packet.buffer.data() + sizeof(header), sizeof(LoadMsg), hash);
         hash = djb2(reinterpret_cast<const uint8_t *>(msg.buffer.data()) +
                         msg.written,
-                    leftToWrite, hash);
+                    msgSize, hash);
         packet.header.baseHeader.hash = hash;
 
         uint32_t offset = 0;
@@ -234,4 +244,17 @@ void Channel::startLoad(BinMsg& msg)
     }
 
 }
+
+void Channel::boot()
+{
+    BufferedHeader packet{}; 
+    packet.header = {.startWord = startWord, .packetLength = packet.buffer.size(), .connectionId = id, .flags = action::boot}; 
+    auto hash = djb2(packet.buffer.data(), sizeBeforeHashField);
+    packet.header.hash = hash;
+    uint32_t offset = 0;
+    while(packet.buffer.size() - offset){
+        offset += port.write(packet.buffer.data() + offset, packet.buffer.size() - offset);
+    }
+}
+
 } // namespace smp

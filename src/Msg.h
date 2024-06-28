@@ -20,7 +20,13 @@ struct LedMsg {
     uint8_t op : 4;
 };
 
+struct StartLoadMsg{
+    uint32_t wholeMsgSize;
+    uint32_t wholeMsgHash;
+};
+
 static_assert(sizeof(LoadMsg) == 8);
 static_assert(sizeof(LedMsg) == 1);
+static_assert(sizeof(StartLoadMsg) == 8);
 
 } // namespace smp

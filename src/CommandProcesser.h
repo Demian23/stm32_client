@@ -12,5 +12,6 @@ private:
 
     std::string loadCommand(std::string_view command);
     std::string startCommand();
+    std::string bootCommand();
     std::string ledCommand(std::string_view command);
 };

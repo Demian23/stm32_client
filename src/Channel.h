@@ -4,7 +4,6 @@
 #include "Msg.h"
 #include "Protocol.h"
 #include "SerialPort.h"
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -30,6 +29,8 @@ public:
     // rewrite as coroutine?
     LocalStatusCode load(BinMsg &msg);
     void startLoad(BinMsg& msg); // possible change of prototype in favour of return LocalStatusCode (espcially if timeout would be implemented)
+    void boot();
+
     ~Channel();
 
     [[nodiscard]] std::string values() const;

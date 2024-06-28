@@ -12,7 +12,8 @@ enum action : uint8_t {
     peripheral,
     startLoad,
     loading,
-    goodbye
+    goodbye,
+	boot
 };
 
 // on success send header only
@@ -43,10 +44,19 @@ inline constexpr uint32_t djb2(const uint8_t *buffer, uint32_t size,
 enum StatusCode : uint16_t {
     Invalid,
     Ok,
+	WrongMsgSize,
     NoSuchCommand,
     NoSuchDevice,
     HashBroken,
-    InvalidId
+    InvalidId,
+	LoadExtraSize,
+	LoadWrongPacket,
+	WaitLoad,
+	NoMemory,
+	WaitStartLoad,
+	DeviceBusy,
+	FailedWrite,
+    NothingToBoot
 };
 
 #pragma pack(push, 2)
@@ -67,10 +77,6 @@ struct LoadHeader {
 
 static_assert(sizeof(LoadHeader) == sizeof(header) + sizeof(LoadMsg));
 
-struct StartLoadMsg{
-    uint32_t wholeMsgSize;
-    uint32_t wholeMsgHash;
-};
 
 struct StartLoadHeader{
     header baseHeader;
@@ -91,12 +97,12 @@ union BufferedLedPacket {
 
 union BufferedLoadHeader {
     LoadHeader header;
-    std::array<uint8_t, sizeof(header)> buffer;
+    std::array<uint8_t, sizeof(LoadHeader)> buffer;
 };
 
 union BufferedStartLoadHeader{
     StartLoadHeader content;
-    std::array<uint8_t, sizeof(header)> buffer;
+    std::array<uint8_t, sizeof(content)> buffer;
 };
 
 #pragma pack(push,2)
